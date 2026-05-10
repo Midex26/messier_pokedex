@@ -382,25 +382,28 @@ export default function App() {
   const importRef = useRef();
 
   const handleExport = () => {
-    const data = JSON.stringify(photos, null, 2);
-    const blob = new Blob([data], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "messier-pokédex.json"; a.click();
-    URL.revokeObjectURL(url);
+    window.location.href = "/api/export";
   };
 
   const handleImport = async (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     try {
-      const text = await f.text();
-      const parsed = JSON.parse(text);
-      for (const [k, v] of Object.entries(parsed)) {
-        await window.storage.set("photo:" + k, v);
+      const fd = new FormData();
+      fd.append("file", f);
+      const r = await fetch("/api/import", { method: "POST", body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${r.status}`);
       }
-      setPhotos(p => ({...p, ...parsed}));
-    } catch(err) { alert("Fichier invalide."); }
+      const { photos: newPhotos, imported } = await r.json();
+      const busted = {};
+      for (const [k, v] of Object.entries(newPhotos)) busted[k] = `${v}?t=${Date.now()}`;
+      setPhotos(busted);
+      alert(`${imported.length} photo(s) importée(s).`);
+    } catch(err) {
+      alert(`Import échoué : ${err.message}`);
+    }
     e.target.value = "";
   };
 
@@ -436,7 +439,7 @@ export default function App() {
                   onMouseEnter={e=>e.currentTarget.style.background="#a78bfa33"} onMouseLeave={e=>e.currentTarget.style.background="#a78bfa22"}>
                   ⬆ Importer
                 </button>
-                <input ref={importRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImport}/>
+                <input ref={importRef} type="file" accept=".zip,application/zip" style={{display:"none"}} onChange={handleImport}/>
               </div>
             </div>
           </div>

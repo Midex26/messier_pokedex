@@ -348,15 +348,19 @@ export default function App() {
     if (!selected) return;
     setUploading(true);
     try {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = e => resolve(e.target.result);
-        fr.onerror = reject;
-        fr.readAsDataURL(file);
-      });
-      await window.storage.set("photo:" + selected.id, dataUrl);
-      setPhotos(p => ({...p, [selected.id]: dataUrl}));
-    } catch(e) { console.error("Upload error:", e); }
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch(`/api/photos/${selected.id}`, { method: "POST", body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${r.status}`);
+      }
+      const { url } = await r.json();
+      setPhotos(p => ({ ...p, [selected.id]: `${url}?t=${Date.now()}` }));
+    } catch(e) {
+      console.error("Upload error:", e);
+      alert(`Upload échoué : ${e.message}`);
+    }
     setUploading(false);
   }, [selected]);
 

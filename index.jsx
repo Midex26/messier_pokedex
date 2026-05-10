@@ -335,16 +335,11 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const list = await window.storage.list("photo:");
-        const ph = {};
-        for (const key of (list && list.keys ? list.keys : [])) {
-          try {
-            const res = await window.storage.get(key);
-            if (res) ph[key.replace("photo:", "")] = res.value;
-          } catch(e) {}
-        }
+        const r = await fetch("/api/photos");
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const ph = await r.json();
         setPhotos(ph);
-      } catch(e) { console.warn("Storage:", e); }
+      } catch(e) { console.warn("Load photos:", e); }
       setLoading(false);
     })();
   }, []);

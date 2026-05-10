@@ -192,6 +192,16 @@ app.post("/api/import", (req, res) => {
   });
 });
 
+if (process.env.NODE_ENV === "production") {
+  const distDir = path.join(__dirname, "dist");
+  app.use(express.static(distDir));
+  app.use((req, res, next) => {
+    if (req.method !== "GET") return next();
+    if (req.path.startsWith("/api/") || req.path.startsWith("/pictures/")) return next();
+    res.sendFile(path.join(distDir, "index.html"));
+  });
+}
+
 const PORT = Number(process.env.PORT) || 3001;
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);

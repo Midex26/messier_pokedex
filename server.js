@@ -92,6 +92,29 @@ app.post("/api/photos/:id", (req, res) => {
   });
 });
 
+app.delete("/api/photos/:id", async (req, res) => {
+  const id = req.params.id;
+  if (!ID_REGEX.test(id)) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+  try {
+    const entries = await fsp.readdir(PICTURES_DIR);
+    let removed = false;
+    for (const name of entries) {
+      const m = name.match(FILE_REGEX);
+      if (m && m[1].toUpperCase() === id) {
+        await fsp.unlink(path.join(PICTURES_DIR, name));
+        removed = true;
+      }
+    }
+    if (!removed) return res.status(404).end();
+    res.status(204).end();
+  } catch (e) {
+    console.error("DELETE /api/photos failed:", e);
+    res.status(500).json({ error: "Delete failed" });
+  }
+});
+
 const PORT = Number(process.env.PORT) || 3001;
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);

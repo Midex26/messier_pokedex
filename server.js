@@ -2,13 +2,41 @@ import express from "express";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import multer from "multer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PICTURES_DIR = path.join(__dirname, "pictures");
 const ID_REGEX = /^M([1-9]|[1-9][0-9]|10[0-9]|110)$/;
 const FILE_REGEX = /^(M\d{1,3})\.(jpg|jpeg|png|webp)$/i;
 
+const ALLOWED_MIME = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_MIME[file.mimetype]) {
+      return cb(new Error("INVALID_MIME"));
+    }
+    cb(null, true);
+  },
+});
+
 await fsp.mkdir(PICTURES_DIR, { recursive: true });
+
+async function removeExistingForId(id) {
+  const entries = await fsp.readdir(PICTURES_DIR);
+  for (const name of entries) {
+    const m = name.match(FILE_REGEX);
+    if (m && m[1].toUpperCase() === id) {
+      await fsp.unlink(path.join(PICTURES_DIR, name));
+    }
+  }
+}
 
 const app = express();
 
@@ -34,6 +62,34 @@ app.get("/api/photos", async (_req, res) => {
     console.error("GET /api/photos failed:", err);
     res.status(500).json({ error: "Internal error" });
   }
+});
+
+app.post("/api/photos/:id", (req, res) => {
+  upload.single("file")(req, res, async (err) => {
+    if (err) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "File too large (max 10 MB)"
+                : err.message === "INVALID_MIME" ? "Invalid file type (jpg/png/webp only)"
+                : "Upload error";
+      return res.status(err.code === "LIMIT_FILE_SIZE" ? 413 : 400).json({ error: msg });
+    }
+    const id = req.params.id;
+    if (!ID_REGEX.test(id)) {
+      return res.status(400).json({ error: "Invalid id (M1–M110)" });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: "Missing file field" });
+    }
+    const ext = ALLOWED_MIME[req.file.mimetype];
+    try {
+      await removeExistingForId(id);
+      const filename = `${id}.${ext}`;
+      await fsp.writeFile(path.join(PICTURES_DIR, filename), req.file.buffer);
+      res.json({ id, url: `/pictures/${filename}` });
+    } catch (e) {
+      console.error("POST /api/photos failed:", e);
+      res.status(500).json({ error: "Write failed" });
+    }
+  });
 });
 
 const PORT = Number(process.env.PORT) || 3001;

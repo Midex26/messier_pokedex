@@ -3,6 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import multer from "multer";
+import { ZipArchive } from "archiver";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PICTURES_DIR = path.join(__dirname, "pictures");
@@ -112,6 +113,31 @@ app.delete("/api/photos/:id", async (req, res) => {
   } catch (e) {
     console.error("DELETE /api/photos failed:", e);
     res.status(500).json({ error: "Delete failed" });
+  }
+});
+
+app.get("/api/export", async (_req, res) => {
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", 'attachment; filename="messier-pictures.zip"');
+
+  const archive = new ZipArchive({ zlib: { level: 6 } });
+  archive.on("error", (err) => {
+    console.error("Export archive error:", err);
+    if (!res.headersSent) res.status(500).end();
+    else res.end();
+  });
+  archive.pipe(res);
+
+  try {
+    const entries = await fsp.readdir(PICTURES_DIR);
+    for (const name of entries) {
+      if (!FILE_REGEX.test(name)) continue;
+      archive.file(path.join(PICTURES_DIR, name), { name });
+    }
+    archive.finalize();
+  } catch (e) {
+    console.error("Export failed:", e);
+    archive.abort();
   }
 });
 

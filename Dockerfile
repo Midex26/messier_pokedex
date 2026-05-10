@@ -10,6 +10,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 EXPOSE 5173
+EXPOSE 3001
 CMD ["npm", "run", "dev"]
 
 FROM node:${NODE_VERSION} AS build
@@ -18,8 +19,13 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM nginx:alpine AS prod
-COPY --from=build /app/dist /usr/share/nginx/html
-RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
+FROM node:${NODE_VERSION} AS prod
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=80
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY server.js package.json ./
+RUN mkdir -p /app/pictures
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["node", "server.js"]

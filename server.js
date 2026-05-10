@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import multer from "multer";
 import { ZipArchive } from "archiver";
+import unzipper from "unzipper";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PICTURES_DIR = path.join(__dirname, "pictures");
@@ -25,6 +26,11 @@ const upload = multer({
     }
     cb(null, true);
   },
+});
+
+const uploadZip = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB for full export
 });
 
 await fsp.mkdir(PICTURES_DIR, { recursive: true });
@@ -139,6 +145,51 @@ app.get("/api/export", async (_req, res) => {
     console.error("Export failed:", e);
     archive.abort();
   }
+});
+
+app.post("/api/import", (req, res) => {
+  uploadZip.single("file")(req, res, async (err) => {
+    if (err) {
+      return res.status(err.code === "LIMIT_FILE_SIZE" ? 413 : 400)
+        .json({ error: "Upload error" });
+    }
+    if (!req.file) return res.status(400).json({ error: "Missing file" });
+
+    const imported = [];
+    try {
+      const dir = await unzipper.Open.buffer(req.file.buffer);
+      for (const entry of dir.files) {
+        if (entry.type !== "File") continue;
+        const base = path.basename(entry.path);
+        const m = base.match(FILE_REGEX);
+        if (!m) continue;
+        const id = m[1].toUpperCase();
+        if (!ID_REGEX.test(id)) continue;
+        const ext = m[2].toLowerCase() === "jpeg" ? "jpg" : m[2].toLowerCase();
+        const targetName = `${id}.${ext}`;
+        // Remove any pre-existing file for this id (different ext)
+        await removeExistingForId(id);
+        const buf = await entry.buffer();
+        await fsp.writeFile(path.join(PICTURES_DIR, targetName), buf);
+        imported.push(id);
+      }
+    } catch (e) {
+      console.error("Import failed:", e);
+      return res.status(400).json({ error: "Invalid zip" });
+    }
+
+    // Build refreshed photos map
+    const entries = await fsp.readdir(PICTURES_DIR);
+    const photos = {};
+    for (const name of entries) {
+      const m = name.match(FILE_REGEX);
+      if (!m) continue;
+      const id = m[1].toUpperCase();
+      if (!ID_REGEX.test(id)) continue;
+      photos[id] = `/pictures/${name}`;
+    }
+    res.json({ imported, photos });
+  });
 });
 
 const PORT = Number(process.env.PORT) || 3001;

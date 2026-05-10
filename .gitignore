@@ -1,0 +1,9 @@
+node_modules
+dist
+.DS_Store
+npm-debug.log
+*.log
+
+# Photos uploaded at runtime — keep folder, ignore contents
+pictures/*
+!pictures/.gitkeep
